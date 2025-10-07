@@ -13,45 +13,50 @@ class Camera:
         self.p_um = p_um
         self.f_mm = f_mm
         self.p_max = p_max
+        self.binning = 1
+        self.downscale = 1
+        self.f_px = self.get_f_px()
+        # f_px is left undefined so we can use binning later when we have that info
+
+    def update_binning(self, new_bin: float, new_downscale: float) -> None:
+        self.binning = new_bin
+        self.downscale = new_downscale
+        self.f_px = self.get_f_px(binning=new_bin, downscale=new_downscale)
 
     def __str__(self):
         return f"Camera: {self.name}, Nx: {self.Nx}, p_um: {self.p_um}, f_mm: {self.f_mm}, p_max: {self.p_max}"
 
-    def get_f_px(self, binning=1, downscale=1):
+    def get_f_px(self, binning: float=1.0, downscale: float=1.0 ) -> float:
         p_mm = self.p_um / 1000.0
         f_px = (self.f_mm / p_mm) / (binning * downscale)
         return f_px 
     
-    def get_hfov(self, Nx):
-        f_px = self.get_f_px()
-        return np.degrees(2 * np.arctan(Nx/(2*f_px)))
+    def get_hfov(self, Nx: float) -> float:
+        return np.degrees(2 * np.arctan(Nx/(2*self.f_px)))
     
-    def calc_fps_rates(self, velocity, Nx, range):
+    def calc_fps_rates(self, velocity, Nx, range_m):
         # does not use self.Nx so that we can calculate for different sizes
 
-        f_px = self.get_f_px(self.f_mm, self.p_um)
         hfov = self.get_hfov(Nx)
         # print(f"HFOV: {hfov}")
         hfov_rad = np.radians(hfov)
-        omega = velocity / range
+        omega = velocity / range_m
         p_dot = omega * (Nx / hfov_rad)
         fps = p_dot / self.p_max
         
         return fps
     
-    def calc_exposure_times(self, velocity, Nx, range):
+    def calc_exposure_times(self, velocity, Nx, range_m):
         # does not use self.Nx so that we can calculate for different sizes
 
-        f_px = self.get_f_px()
         hfov = self.get_hfov(Nx)
         # print(f"HFOV: {hfov}")
         hfov_rad = np.radians(hfov)
-        omega = velocity / range
+        omega = velocity / range_m
         p_dot = omega * (Nx / hfov_rad)
         exposure_time = 1 / p_dot
         return exposure_time * 1000 # convert to ms
     
-
     def calculate_gsd(self, range_m, object_size_m):
         # gsd = R*p / f
         # Convert to meters
@@ -66,12 +71,15 @@ class Camera:
 
         return gsd_m, apparent_size_px
 
-    def run_analysis(self, velocity, range, object_size_m, print_results=False):
+    def analysis_title(self):
+        return f"Analysis for: {self.name} at {self.f_mm} mm lens"
+
+    def run_analysis(self, velocity, range_m, object_size_m, print_results=False):
         results = {}
         for Nx in self.Nx:
-            min_fps = self.calc_fps_rates(velocity, Nx, range)
-            min_exposure_time = self.calc_exposure_times(velocity, Nx, range)
-            gsd, apparent_size_px = self.calculate_gsd(range, object_size_m)
+            min_fps = self.calc_fps_rates(velocity, Nx, range_m)
+            min_exposure_time = self.calc_exposure_times(velocity, Nx, range_m)
+            gsd, apparent_size_px = self.calculate_gsd(range_m, object_size_m)
             results[Nx] = (round(min_fps, 2), round(min_exposure_time, 2), round(self.get_hfov(Nx), 2),
                            round(apparent_size_px, 2))
         
@@ -79,6 +87,6 @@ class Camera:
         df.index.name = 'Size (px)'
 
         if print_results:
-            print(f"Analysis for: {self.name} at {self.f_mm} mm lens")
+            print(self.analysis_title())
             print(df)
         return df
