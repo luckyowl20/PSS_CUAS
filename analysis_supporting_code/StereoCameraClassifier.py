@@ -162,7 +162,7 @@ class StereoCamera(Camera):
         )
 
         df.index = pd.MultiIndex.from_tuples(df.index)
-        df.index.set_names(['Nx, HFOV', 'sigma_z', 'sigma_x'], inplace=True)
+        df.index.set_names(['Nx, HFOV', 'sigma_x', 'sigma_z'], inplace=True)
 
         return df
 
