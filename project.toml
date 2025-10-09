@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "analysis"
+version = "0.1.0"
+description = "Reusable analysis package for my project"
+readme = "README.md"
+requires-python = ">=3.10"
+
+# dependencies for analysis package
+dependencies = [
+    "numpy",
+    "pandas",
+    "scipy",
+]
+
+
+# where to find package
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+# auto-discover all packages under src/
+[tool.setuptools.packages.find]
+where = ["src"]

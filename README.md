@@ -11,4 +11,6 @@
 4. Install requirements from `requirements.txt`, this may take a minute.
 `pip install -r requirements.txt`
 
-5. Run code!
+5. Run `pip install -e .` to install local packages used for analysis and other in house packages. 
+
+6. Run code!
