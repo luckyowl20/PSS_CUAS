@@ -1,10 +1,13 @@
+from typing import Optional
 import numpy as np
 import pandas as pd
+from collections.abc import Callable
 
 # analysis for entire camera given spec sheet
 
 class Camera:
-    def __init__(self, name: str, Nx: list[int], p_um: float, f_mm: float, p_max_percentage: float):
+    def __init__(self, name: str, Nx: list[int], p_um: float, f_mm: float, p_max_percentage: Optional[float] = None, p_lambda: Optional[float]= None):
+
         self.name = name
         if isinstance(Nx, int):
             self.Nx = [Nx]
@@ -17,6 +20,7 @@ class Camera:
         self.downscale = 1
         self.f_px = self.get_f_px()
         # f_px is left undefined so we can use binning later when we have that info
+        self.p_lambda = p_lambda
 
     def update_binning(self, new_bin: float, new_downscale: float) -> None:
         self.binning = new_bin
@@ -83,17 +87,35 @@ class Camera:
     def get_p_max(self, apparent_size_px):
         # returns p_max as a percentage of apparent size
         return apparent_size_px * self.p_max_percentage
+    
+    # uses lambda p_max
+    def get_lambda_p_max(self, apparent_size_px):
+        # lambda / apparent_size_px
+        return (self.p_lambda / apparent_size_px)
+
+    def p_max_logistic(self, apparent_size_px):
+        # numerically stable implementation of this function
+        # \frac{50}{1+\exp{0.05(x-50)}} where x is apparent size
+        a = 0.05 * (apparent_size_px - 50)
+        p_max_px = np.where(
+            a >= 0,
+            50 / (1 + np.exp(a)),
+            50 * np.exp(-a) / (1 + np.exp(-a))
+        )   
+        return float(p_max_px)
+
 
     # analysis functions for camera class
 
     def analysis_title(self):
         return f"Analysis for: {self.name} at {self.f_mm} mm lens"
 
-    def run_fps_analysis(self, velocity, range_m, object_size_m, p_blur_max_px, print_results=False):
+    # used percentage p_max_px
+    def run_fps_analysis(self, velocity, range_m, object_size_m, p_blur_max_px, p_max_function: Callable, print_results=False):
         results = {}
         for Nx in self.Nx:
             gsd, apparent_size_px = self.calculate_gsd(range_m, object_size_m)
-            p_max_px = self.get_p_max(apparent_size_px)
+            p_max_px = p_max_function(apparent_size_px)
             min_fps = self.calc_fps_rates(velocity, Nx, range_m, p_max_px)
             min_exposure_time = self.calc_exposure_times(velocity, Nx, range_m, p_blur_max_px)
             results[Nx] = (round(min_fps, 2), round(min_exposure_time, 2), round(self.get_hfov(Nx), 2),
@@ -106,6 +128,8 @@ class Camera:
             print(self.analysis_title())
             print(df)
         return df
+    
+
     
     def run_apparent_size_analysis(self, ranges_m, object_size_m, print_results=False):
         results = {}
