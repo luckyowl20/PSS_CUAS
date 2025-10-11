@@ -1,2 +1,4 @@
 .pss/
 analysis_supporting_code/__pycache__
+src/analysis.egg-info
+src/analysis/__pycache__
