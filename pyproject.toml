@@ -9,7 +9,7 @@ description = "Reusable analysis package for my project"
 readme = "README.md"
 requires-python = ">=3.10"
 
-# dependencies for analysis package
+# dependencies our packages, also in the requirements.txt
 dependencies = [
     "numpy",
     "pandas",
