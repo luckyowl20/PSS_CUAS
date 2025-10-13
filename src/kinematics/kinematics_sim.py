@@ -4,10 +4,10 @@ import pyvista as pv
 # SORRY ALL UNITS ARE CM
 
 # setup geometry
-b_a = 30.0     # distance pivot -> actuator attach along barrel
+b_a = 20.32     # distance pivot -> actuator attach along barrel
 b_l = 60.0     # barrel length
 L_d = 20.0     # distance between actuator base pivots
-h   = 30.0     # actuator base height
+h   = 20.32     # actuator base height
 base_x = -15.0 # actuator base offset from pivot
 
 pivot  = np.array([0.0, 0.0, 0.0])
@@ -15,8 +15,20 @@ mount1 = np.array([base_x,  L_d/2, h])
 mount2 = np.array([base_x, -L_d/2, h])
 
 # actuator length constraints
-L_MIN = 10.0
-L_MAX = 50.0
+L_MIN = 15.5
+L_MAX = L_MIN + 5.0
+
+BASE_X_RANGE = (-60.0, 10.0)
+LD_RANGE     = (  5.0, 100.0)
+H_RANGE      = (  5.0, 120.0)
+B_A_RANGE = (5.0, 80.0)   # reasonable range for barrel attachment (cm)
+
+L_RANGE = (0.0, 150.0)   # overall allowed range for either slider
+EPS = 0.1                # minimum gap so L_MIN < L_MAX
+
+
+
+
 
 # theta = azimuth around +Z from +X; phi = elevation from XY plane
 def u_from_angles_deg(theta_deg, phi_deg):
@@ -183,9 +195,7 @@ def on_phi(val):
 
 
 
-BASE_X_RANGE = (-60.0, 10.0)
-LD_RANGE     = (  5.0, 100.0)
-H_RANGE      = (  5.0, 120.0)
+
 
 
 def on_base_x(val):
@@ -230,14 +240,19 @@ def on_Lmax_slider(val: float):
     update_by_angles(theta, phi)
     plotter.render()
 
+
+def on_ba(val):
+    global b_a
+    b_a = float(val)
+    update_by_angles(theta, phi)
+    plotter.render()
+
+
 # sliders
-slider_v_offset = 0.5
-slider_v_origin1 = 0.05
 
-L_RANGE = (0.0, 150.0)   # overall allowed range for either slider
-EPS = 0.1                # minimum gap so L_MIN < L_MAX
+# current actuator spec
 
-
+# right column
 # Add the sliders (placed above your existing base/angle sliders)
 s_min = plotter.add_slider_widget(
     on_Lmin_slider, rng=list(L_RANGE), value=L_MIN,
@@ -256,9 +271,13 @@ phi_slider = plotter.add_slider_widget(
     on_phi, rng=[0.0, 85.0], value=phi,
     title="phi",
     pointa=(0.55, 0.10), pointb=(0.95, 0.10),
-    title_height=0.02,
-    slider_width=0.02,
-    tube_width=0.004,
+    style='modern'
+)
+
+separation_slider = plotter.add_slider_widget(
+    on_Ld, rng=list(LD_RANGE), value=L_d,
+    title="Mount separation L_d (cm)",
+    pointa=(0.55, 0.20), pointb=(0.95, 0.20),
     style='modern'
 )
 
@@ -268,9 +287,6 @@ theta_slider = plotter.add_slider_widget(
     on_theta, rng=[-90.0, 90.0], value=theta,
     title="theta",       
     pointa=(0.05, 0.10), pointb=(0.45, 0.10),
-    title_height=0.02,
-    slider_width=0.02,
-    tube_width=0.004,
     style='modern'
 )
 
@@ -278,19 +294,6 @@ base_slider = plotter.add_slider_widget(
     on_base_x, rng=list(BASE_X_RANGE), value=base_x,
     title="Base X offset (cm)",
     pointa=(0.05, 0.20), pointb=(0.45, 0.20),
-    title_height=0.02,
-    slider_width=0.02,
-    tube_width=0.004,
-    style='modern'
-)
-
-separation_slider = plotter.add_slider_widget(
-    on_Ld, rng=list(LD_RANGE), value=L_d,
-    title="Mount separation L_d (cm)",
-    pointa=(0.55, 0.20), pointb=(0.95, 0.20),
-    title_height=0.02,
-    slider_width=0.02,
-    tube_width=0.004,
     style='modern'
 )
 
@@ -298,14 +301,18 @@ mount_slider = plotter.add_slider_widget(
     on_h, rng=list(H_RANGE), value=h,
     title="Mount height h (cm)",
     pointa=(0.05, 0.30), pointb=(0.45, 0.30),
-    title_height=0.02,
-    slider_width=0.02,
-    tube_width=0.004,
+    style='modern'
+)
+
+slider_ba = plotter.add_slider_widget(
+    on_ba, rng=list(B_A_RANGE), value=b_a,
+    title="Attachment height b_a (cm)",
+    pointa=(0.05, 0.40), pointb=(0.45, 0.40),  
     style='modern'
 )
 
 # make sliders slimmer / cleaner (VTK representation)
-for s in (s_min, s_max, theta_slider, phi_slider, base_slider, separation_slider, mount_slider):
+for s in (s_min, s_max, theta_slider, phi_slider, base_slider, separation_slider, mount_slider, slider_ba):
     rep = s.GetRepresentation()
     rep.SetTubeWidth(0.004)     # track thickness
     rep.SetSliderWidth(0.015)   # handle width
