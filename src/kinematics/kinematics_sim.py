@@ -12,6 +12,7 @@ from pyvistaqt import BackgroundPlotter
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 
+
 DEFAULT_SETUP_PATH = os.path.join(os.path.dirname(__file__), "actuator_setups", "default_setups.ini")
 
 # --------------------------- Geometry / Globals (cm) ---------------------------
@@ -139,7 +140,7 @@ class RigApp(QWidget):
         panel_layout = QVBoxLayout(panel)
         panel_layout.setContentsMargins(12, 12, 12, 12)
         panel_layout.setSpacing(5)
-        panel.setMaximumWidth(1200)
+        panel.setMaximumWidth(2000)
 
         # dynamic resizer
         self.splitter = QSplitter(Qt.Horizontal)
@@ -238,8 +239,18 @@ class RigApp(QWidget):
         form.addRow("Barrel opacity", self.opacity_slider)
 
         # analysis button and plot area
+        self.analyze_layout = QHBoxLayout()
         self.analyze_btn = QPushButton("Analyze max φ vs θ")
         self.analyze_btn.clicked.connect(self._on_analyze_click)
+
+        self.save_plot_btn = QPushButton("Save Plot")
+        self.save_plot_btn.clicked.connect(self._on_save_plot_click)
+
+        self.analyze_layout.addWidget(self.analyze_btn)
+        self.analyze_layout.addWidget(self.save_plot_btn)
+
+        self.analyze_btn_row = QWidget()
+        self.analyze_btn_row.setLayout(self.analyze_layout)
 
         self.polar_fig = Figure(figsize=(3.8, 3.8), constrained_layout=True)
         self.polar_ax = self.polar_fig.add_subplot(111, projection="polar")
@@ -257,7 +268,7 @@ class RigApp(QWidget):
 
 
         panel_layout.addLayout(form)
-        panel_layout.addWidget(self.analyze_btn)
+        panel_layout.addWidget(self.analyze_btn_row)
 
         panel_layout.addWidget(self.polar_canvas)
         panel_layout.addWidget(self.polar_info_label)
@@ -457,6 +468,27 @@ class RigApp(QWidget):
             self.barrel_actor.prop.opacity = val / 100.0
             self.plotter.render()
 
+    def _on_save_plot_click(self):
+        """Export the current polar plot as an image file."""
+
+        # Ask the user for a file path
+        path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Save Plot As Image",
+            "polar_plot.png",
+            "PNG Image (*.png);;JPEG Image (*.jpg);;SVG Vector Image (*.svg);;All Files (*)"
+        )
+
+        if not path:
+            return  # user canceled
+
+        try:
+            # Save the current figure from your canvas
+            self.polar_canvas.figure.savefig(path, dpi=300, bbox_inches="tight")
+            self.status.setText(f"Plot saved to {path}")
+        except Exception as e:
+            QMessageBox.warning(self, "Save Failed", f"Could not save plot:\n{e}")
+
     # ---------- Core update ----------
     def _apply_pose_update(self):
         # Read UI
@@ -637,11 +669,11 @@ class RigApp(QWidget):
 
         # Full curve for the plot
         curve = self.analyze_max_phi_curve(theta_min=theta_min,
-                                        theta_max=theta_max,
-                                        theta_step=theta_step,
-                                        phi_hi=phi_hi,
-                                        coarse_step=coarse_step,
-                                        tol=tol)
+                                           theta_max=theta_max,
+                                           theta_step=theta_step,
+                                           phi_hi=phi_hi,
+                                           coarse_step=coarse_step,
+                                           tol=tol)
 
         # --- Compute max φ at θ = 0, 45, θ_max (clamped to range)
         special_thetas = []
@@ -679,6 +711,54 @@ class RigApp(QWidget):
         else:
             self.polar_info_label.setText("No feasible φ found.")
 
+    def _collect_analysis_info_text(self, curve, theta_min=-90.0, theta_max=90.0,
+                                    phi_hi=90.0, coarse_step=0.5, tol=1e-3):
+        th = curve[:, 0]
+        ph = curve[:, 1]
+        valid = ~np.isnan(ph)
+
+        lines = ["Analysis"]
+
+        # Global max over the curve we just plotted
+        if np.any(valid):
+            i = np.nanargmax(ph)
+            lines.append(f"Global max φ  {ph[i]:6.2f}° @ θ={th[i]:5.1f}°")
+        else:
+            lines.append("Global max φ      —")
+
+        # Helper to clamp target θ to the analysis range
+        clamp = lambda t: max(theta_min, min(theta_max, t))
+
+        # Targets: 0°, 45°, 90° (clamped to range)
+        for target in (0.0, 45.0, 90.0):
+            tt = clamp(target)
+            phi_star = self._max_phi_for_theta(tt, phi_hi=phi_hi,
+                                            coarse_step=coarse_step, tol=tol)
+            if np.isnan(phi_star):
+                lines.append(f"φ_max(θ={tt:3.0f}°)      —")
+            else:
+                lines.append(f"φ_max(θ={tt:3.0f}°)  {phi_star:6.2f}°")
+
+        # Fixed-width feel to match your Setup box
+        return "\n".join(lines)
+
+    def _collect_setup_info_text(self):
+        # pull straight from your UI boxes
+        vals = {
+            "Lug clock angle": f"{self.lug_box.value():.1f} deg",
+            "Base X offset":   f"{self.base_x_box.value():.3f} cm",
+            "Mount separation":f"{self.ld_box.value():.3f} cm",
+            "Mount height h":  f"{self.h_box.value():.3f} cm",
+            "Attachment height": f"{self.ba_box.value():.3f} cm",
+            "Actuator MIN":    f"{self.lmin_box.value():.3f} cm",
+            "Actuator MAX":    f"{self.lmax_box.value():.3f} cm",
+            "Barrel radius":   f"{self.radius_box.value():.3f} cm",
+            "Barrel length":   f"{self.length_box.value():.3f} cm",
+        }
+        # tidy, fixed-width block
+        lines = [f"{k:<18} {v:>10}" for k, v in vals.items()]
+
+        return "Setup\n" + "\n".join(lines)
 
     def _update_polar_plot(self, curve, annotations=None):
         """
@@ -686,44 +766,63 @@ class RigApp(QWidget):
         annotations: optional list of (theta_deg, phi_deg, label)
         """
 
-        th_deg = curve[:, 0]
-        r_phi  = curve[:, 1]
-        th_rad = np.deg2rad(th_deg)
+        self.polar_fig.clf()
+        ax = self.polar_fig.add_subplot(111, projection="polar")
+        self.polar_ax = ax
 
-        self.polar_ax.clear()
-        self.polar_ax.set_title("Max φ vs θ", va="bottom", fontsize=10)
-        self.polar_ax.set_theta_zero_location("E")
-        self.polar_ax.set_theta_direction(-1)
-        self.polar_ax.set_rmax(90)
-        self.polar_ax.set_rticks([0, 30, 60, 90])
-        self.polar_ax.grid(True, alpha=0.4)
-        self.polar_ax.set_thetamin(-90)   # keep your half-circle view
-        self.polar_ax.set_thetamax(90)
+        # Basic polar setup
+        th_deg = curve[:, 0]
+        r_phi = curve[:, 1]
+        th_rad = np.deg2rad(th_deg)
+        ax.set_title("Max φ vs θ", va="bottom", fontsize=10)
+        ax.set_theta_zero_location("E")
+        ax.set_theta_direction(-1)
+        ax.set_thetamin(-90)
+        ax.set_thetamax(90)
+        ax.set_rmax(90)
+        ax.grid(True, alpha=0.4)
 
         valid = ~np.isnan(r_phi)
         if np.any(valid):
             order = np.argsort(th_rad[valid])
-            theta_sorted = th_rad[valid][order]
-            phi_sorted   = r_phi[valid][order]
-            self.polar_ax.plot(theta_sorted, phi_sorted, linewidth=2)
+            th_sorted = th_rad[valid][order]
+            phi_sorted = r_phi[valid][order]
+            ax.plot(th_sorted, phi_sorted, linewidth=2)
 
-            # Mark global max on the curve
-            max_idx = np.nanargmax(phi_sorted)
-            max_theta = theta_sorted[max_idx]
-            max_phi   = phi_sorted[max_idx]
-            self.polar_ax.plot([max_theta], [max_phi], 'ro')
-            # self.polar_ax.text(max_theta, max_phi + 3,
-            #                 f"{max_phi:.1f}° @ θ={np.rad2deg(max_theta):.0f}°",
-            #                 color='red', fontsize=9, ha='center', va='bottom', weight='bold')
+            # global max marker
+            i = np.nanargmax(phi_sorted)
+            ax.plot([th_sorted[i]], [phi_sorted[i]], 'ro')
 
-        # Extra annotations (e.g., θ=0, 45, θ_max)
+        # extra annotations (e.g., θ=0, 45, θ_max)
         if annotations:
             for th_d, phi_d, label in annotations:
-                if np.isnan(phi_d):
-                    continue
+                if np.isnan(phi_d): continue
                 th_r = np.deg2rad(th_d)
-                self.polar_ax.plot([th_r], [phi_d], 'ko', markersize=5)
-                # self.polar_ax.text(th_r, phi_d + 2, label, fontsize=8, ha='center', va='bottom')
+                ax.plot([th_r], [phi_d], 'ko', markersize=5)
+
+        # analysis text
+        analysis_text = self._collect_analysis_info_text(
+            curve,
+            theta_min=-90.0, theta_max=90.0,   # match your plotted range
+            phi_hi=90.0, coarse_step=0.5, tol=1e-3
+        )
+        ax.text(1.05, 0.95, analysis_text,      # lower than the Setup box
+                transform=ax.transAxes, ha='left', va='top',
+                fontsize=9, family='monospace',
+                bbox=dict(boxstyle='round,pad=0.4', facecolor='white', alpha=0.85),
+                clip_on=False)
+        
+        # setup text
+        info = self._collect_setup_info_text()
+        ax.text(1.05, 0.55, info,
+                transform=ax.transAxes,
+                ha='left', va='top',
+                fontsize=9, family='monospace',
+                bbox=dict(boxstyle='round,pad=0.4',
+                        facecolor='white', alpha=0.8),
+                clip_on=False)
+        
+
 
         self.polar_canvas.draw_idle()
 
