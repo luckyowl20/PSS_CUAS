@@ -4,4 +4,4 @@ scipy
 pandas
 matplotlib
 ipykernel
-pybullet
+pyvista
