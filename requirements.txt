@@ -5,3 +5,5 @@ pandas
 matplotlib
 ipykernel
 pyvista
+matplotlib 
+PyQt5
