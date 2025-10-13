@@ -212,20 +212,47 @@ def on_h(val):
     update_by_angles(theta, phi)
     plotter.render()
 
+def on_Lmin_slider(val: float):
+    global L_MIN
+    L_MIN = float(val)
+    # enforce L_MIN < L_MAX
+    if L_MIN > L_MAX - EPS:
+        L_MIN = L_MAX - EPS
+    update_by_angles(theta, phi)
+    plotter.render()
+
+def on_Lmax_slider(val: float):
+    global L_MAX
+    L_MAX = float(val)
+    # enforce L_MIN < L_MAX
+    if L_MAX < L_MIN + EPS:
+        L_MAX = L_MIN + EPS
+    update_by_angles(theta, phi)
+    plotter.render()
+
 # sliders
 slider_v_offset = 0.5
 slider_v_origin1 = 0.05
 
-plotter.add_slider_widget(
-    on_theta, rng=[-90.0, 90.0], value=theta,
-    title="theta",       
-    pointa=(0.05, 0.10), pointb=(0.45, 0.10),
-    title_height=0.02,
-    slider_width=0.02,
-    tube_width=0.004,
+L_RANGE = (0.0, 150.0)   # overall allowed range for either slider
+EPS = 0.1                # minimum gap so L_MIN < L_MAX
+
+
+# Add the sliders (placed above your existing base/angle sliders)
+s_min = plotter.add_slider_widget(
+    on_Lmin_slider, rng=list(L_RANGE), value=L_MIN,
+    title="Actuator MIN (cm)",
+    pointa=(0.55, 0.30), pointb=(0.95, 0.30),  # top row, right side
     style='modern'
 )
-plotter.add_slider_widget(
+s_max = plotter.add_slider_widget(
+    on_Lmax_slider, rng=list(L_RANGE), value=L_MAX,
+    title="Actuator MAX (cm)",
+    pointa=(0.55, 0.40), pointb=(0.95, 0.40),  # just above MIN
+    style='modern'
+)
+
+phi_slider = plotter.add_slider_widget(
     on_phi, rng=[0.0, 85.0], value=phi,
     title="phi",
     pointa=(0.55, 0.10), pointb=(0.95, 0.10),
@@ -235,7 +262,19 @@ plotter.add_slider_widget(
     style='modern'
 )
 
-plotter.add_slider_widget(
+
+# left column
+theta_slider = plotter.add_slider_widget(
+    on_theta, rng=[-90.0, 90.0], value=theta,
+    title="theta",       
+    pointa=(0.05, 0.10), pointb=(0.45, 0.10),
+    title_height=0.02,
+    slider_width=0.02,
+    tube_width=0.004,
+    style='modern'
+)
+
+base_slider = plotter.add_slider_widget(
     on_base_x, rng=list(BASE_X_RANGE), value=base_x,
     title="Base X offset (cm)",
     pointa=(0.05, 0.20), pointb=(0.45, 0.20),
@@ -244,7 +283,8 @@ plotter.add_slider_widget(
     tube_width=0.004,
     style='modern'
 )
-plotter.add_slider_widget(
+
+separation_slider = plotter.add_slider_widget(
     on_Ld, rng=list(LD_RANGE), value=L_d,
     title="Mount separation L_d (cm)",
     pointa=(0.55, 0.20), pointb=(0.95, 0.20),
@@ -253,7 +293,8 @@ plotter.add_slider_widget(
     tube_width=0.004,
     style='modern'
 )
-plotter.add_slider_widget(
+
+mount_slider = plotter.add_slider_widget(
     on_h, rng=list(H_RANGE), value=h,
     title="Mount height h (cm)",
     pointa=(0.05, 0.30), pointb=(0.45, 0.30),
@@ -262,4 +303,16 @@ plotter.add_slider_widget(
     tube_width=0.004,
     style='modern'
 )
+
+# make sliders slimmer / cleaner (VTK representation)
+for s in (s_min, s_max, theta_slider, phi_slider, base_slider, separation_slider, mount_slider):
+    rep = s.GetRepresentation()
+    rep.SetTubeWidth(0.004)     # track thickness
+    rep.SetSliderWidth(0.015)   # handle width
+    rep.SetSliderLength(0.02)   # handle length
+    rep.SetEndCapWidth(0.010)
+    rep.SetEndCapLength(0.006)
+    rep.SetTitleHeight(0.015)   # label size
+    rep.SetLabelHeight(0.015)
+
 plotter.show()
