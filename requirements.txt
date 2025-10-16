@@ -7,3 +7,4 @@ ipykernel
 pyvista
 matplotlib 
 PyQt5
+pyvistaqt
