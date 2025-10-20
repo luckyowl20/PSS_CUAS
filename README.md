@@ -21,4 +21,4 @@
 
 2. Navigate to the `src/kinematics` directory from the command line
 
-3. Type `python kinematics_sim.py` or `python3 kinematics_sim.py` to run the sim.
+3. Type `python main.py` or `python3 main.py` to run the sim.
