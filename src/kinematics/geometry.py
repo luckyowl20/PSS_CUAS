@@ -103,8 +103,8 @@ def lug_directions(u, psi_deg):
     """
     v, w = orthonormal_frame(u)
     psi = np.deg2rad(psi_deg)
-    n1 = np.cos(psi)*v + np.sin(psi)*w
-    n2 = -n1
+    n1 =  np.cos(psi) * v + np.sin(psi) * w   # near +v, tilted toward +w
+    n2 = -np.cos(psi) * v + np.sin(psi) * w
     return n1, n2
 
 

@@ -18,7 +18,7 @@ try:
 except ImportError:
     PYVISTA_AVAILABLE = False
     pv = None
-from PyQt5.QtCore import Qt, QEvent
+from PyQt5.QtCore import Qt, QThreadPool
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QHBoxLayout, QVBoxLayout, QFormLayout,
     QLabel, QDoubleSpinBox, QFrame, QSlider, QPushButton, QFileDialog, QComboBox,
@@ -43,6 +43,7 @@ from .analysis import AnalysisManager
 from .visualization import VisualizationManager
 from .setup_manager import SetupManager
 from .optimization import OptimizationManager
+from .optimization_worker import OptimizationWorker
 
 
 class RigApp(QWidget):
@@ -60,6 +61,10 @@ class RigApp(QWidget):
         self.visualization_manager = VisualizationManager(self)
         self.setup_manager = SetupManager(self)
         self.optimization_manager = OptimizationManager(self)
+
+        # optimization threads
+        self.thread_pool = QThreadPool()
+        self._opt_cancel = {"cancel": False}
         
         # Setup UI
         self._setup_layouts()
@@ -196,7 +201,7 @@ class RigApp(QWidget):
         self._opt_layout.setSpacing(10)
 
         # --- Table: Parameter | Min | Max ---
-        self.opt_table = QTableWidget(4, 3, self._opt_content)
+        self.opt_table = QTableWidget(5, 3, self._opt_content)
         self.opt_table.setHorizontalHeaderLabels(["Parameter", "Min", "Max"])
         self.opt_table.verticalHeader().setVisible(False)
         self.opt_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
@@ -208,6 +213,7 @@ class RigApp(QWidget):
             ("Base X offset",             "min_base_x_offset",       "max_base_x_offset"),
             ("Attachment height",         "min_attachment_height",   "max_attachment_height"),
             ("Mount separation distance", "min_mount_separation",    "max_mount_separation"),
+            ("Lug offset angle",           "min_lug_angle",           "max_lug_angle")
         ]
 
         # Keep references to line edits for easy access
@@ -256,26 +262,48 @@ class RigApp(QWidget):
         opt_page_layout.addWidget(self._opt_scroll)
 
         # hook up the run button
+        btn_row = QHBoxLayout()
         self.run_opt_btn = QPushButton("Run Optimization")
-        self._opt_layout.addWidget(self.run_opt_btn)
+        self.cancel_opt_btn = QPushButton("Cancel")
+        self.cancel_opt_btn.setEnabled(False)
+        btn_row.addWidget(self.run_opt_btn)
+        btn_row.addWidget(self.cancel_opt_btn)
+        self._opt_layout.addLayout(btn_row)
 
-        self.opt_result_label = QLabel("")   # optional, show results here too
-        self._opt_layout.addWidget(self.opt_result_label)
+        self.opt_progress = QLabel("")  # light-weight progress readout
+        self._opt_layout.addWidget(self.opt_progress)
 
         def _run_opt_clicked():
-            try:
-                result = self.optimization_manager.run_from_ui()
-                self.opt_result_label.setText(
-                    f"Best area: {result['best_area']:.6f} rad²"
-                )
-                # Optional: trigger a re-analysis to update the polar plot and 3D cone
-                # using your existing Analyze routine:
-                self.analysis_manager.on_analyze_click()  # re-draw using best params
-            except Exception as e:
-                if hasattr(self, "status") and self.status:
-                    self.status.setText(f"Optimization error: {e}")
+            # try:
+            self._opt_cancel["cancel"] = False
+            self.run_opt_btn.setEnabled(False)
+            self.cancel_opt_btn.setEnabled(True)
+            self.status.setText("Optimization running...")
+
+            # snapshot GUI state and bounds on GUI thread
+            ctx = self.optimization_manager.snapshot_context()
+            mins, maxs = self.optimization_manager.read_bounds_arrays()
+
+            worker = OptimizationWorker(ctx, mins, maxs, self._opt_cancel)
+
+            # connect signals -> GUI thread slots
+            worker.signals.progress.connect(self._on_opt_progress)
+            worker.signals.best_params.connect(self._on_opt_best_params)
+            worker.signals.error.connect(self._on_opt_error)
+            worker.signals.finished.connect(self._on_opt_finished)
+            worker.signals.cancelled.connect(self._on_opt_cancelled)
+
+            self.thread_pool.start(worker)
+            # except Exception as e:
+            # self.status.setText(f"Optimization error: {e}")
+
+        def _cancel_opt_clicked():
+            self._opt_cancel["cancel"] = True
 
         self.run_opt_btn.clicked.connect(_run_opt_clicked)
+        self.cancel_opt_btn.clicked.connect(_cancel_opt_clicked)
+
+        # return the full page
         return opt_page
 
     def _setup_controls(self):
@@ -670,7 +698,7 @@ class RigApp(QWidget):
         hh = self.h_box.value()
         self.mount1, self.mount2 = update_mounts_arrays(bx, ld, hh)
     
-    # optimization update
+    # optimization callbacks and functions
     def apply_kinematic_params(self, params: dict):
         """
         Update the 4 design variables through the same path your analysis uses.
@@ -684,6 +712,8 @@ class RigApp(QWidget):
             self.h_box.setValue(float(params["mount_height"]))
         if "attachment_height" in params:
             self.ba_box.setValue(float(params["attachment_height"]))
+        if "lug_offset_angle" in params:
+            self.lug_box.setValue(float(params["lug_offset_angle"]))
 
         # Recompute mounts from UI values (updates self.mount1, self.mount2)
         self._update_mounts_arrays()
@@ -695,3 +725,36 @@ class RigApp(QWidget):
             self.ba_box.value(), self.radius_box.value(),
             self.lug_box.value()
         )
+    
+    # callbacks -- move these later into some sort of utils file
+    def _on_opt_progress(self, percent, best_area):
+        self.opt_progress.setText(f"Progress: {percent}% | best area: {best_area:.6f} rad²")
+
+    def _on_opt_best_params(self, params, best_area):
+        """
+        Called often; runs on the GUI thread. It MAY update widgets/scene safely.
+        Throttle if desired (e.g., update only every Nth call) for smoothness.
+        """
+        # Apply candidate to GUI & re-run analysis to refresh the polar plot / cone
+        self.apply_kinematic_params(params)
+        # optional: refresh your polar plot/3D viz
+        self.analysis_manager.on_analyze_click()
+
+    def _on_opt_error(self, tb_text):
+        self.status.setText("Optimization crashed. See log.")
+        # You could also show a dialog, or log tb_text somewhere visible:
+        print(tb_text)
+
+    def _on_opt_finished(self, result):
+        self.run_opt_btn.setEnabled(True)
+        self.cancel_opt_btn.setEnabled(False)
+        self.status.setText("Optimization finished.")
+        if result["best_params"]:
+            # Apply and draw the final best
+            self.apply_kinematic_params(result["best_params"])
+            self.analysis_manager.on_analyze_click()
+
+    def _on_opt_cancelled(self):
+        self.run_opt_btn.setEnabled(True)
+        self.cancel_opt_btn.setEnabled(False)
+        self.status.setText("Optimization cancelled.")

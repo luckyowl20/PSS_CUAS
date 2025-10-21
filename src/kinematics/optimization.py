@@ -1,6 +1,8 @@
 # optimization.py
 import math
 import numpy as np
+from .kinematics import KinematicsAnalyzer
+from .geometry import update_mounts_arrays, fixed_opposite_attach_points
 
 class OptimizationManager:
     """
@@ -14,6 +16,7 @@ class OptimizationManager:
         "base_x_offset",       # -> ui.base_x_box
         "attachment_height",   # -> ui.ba_box
         "mount_separation",    # -> ui.ld_box
+        "lug_offset_angle"     # -> ui.lug_box
     )
 
     # Keys for reading bounds from the Optimization tab table
@@ -22,12 +25,14 @@ class OptimizationManager:
         "min_base_x_offset",
         "min_attachment_height",
         "min_mount_separation",
+        "min_lug_angle"
     )
     MAX_KEYS = (
         "max_mount_height",
         "max_base_x_offset",
         "max_attachment_height",
         "max_mount_separation",
+        "max_lug_angle"
     )
 
     def __init__(self, ui):
@@ -166,3 +171,42 @@ class OptimizationManager:
                 f"ld={result['best_params'].get('mount_separation'):.3f}"
             )
         return result
+
+    # worker thread functions to handle async running
+    def snapshot_context(self):
+        """
+        Read all GUI-dependent constants ON THE GUI THREAD and return
+        an immutable dict for the worker thread.
+        """
+
+        ctx = {
+            "param_keys": list(self.PARAM_KEYS),
+            "theta_window": (-90.0, 90.0),
+            "theta_step": 1.0,
+            "phi_hi": 90.0,
+            "rng_seed": 42,
+            "max_samples": 200,
+            "local_refine_samples": 80,
+
+            # constants taken from UI once (safe on GUI thread)
+            "lmin": float(self.ui.lmin_box.value()),
+            "lmax": float(self.ui.lmax_box.value()),
+            "radius": float(self.ui.radius_box.value()),
+            "lug": float(self.ui.lug_box.value()),
+
+            # thread-local classes/functions (pure)
+            "KinematicsAnalyzer": KinematicsAnalyzer,
+            "update_mounts_arrays": update_mounts_arrays,
+            "fixed_opposite_attach_points": fixed_opposite_attach_points,
+        }
+        return ctx
+
+    def read_bounds_arrays(self):
+        """
+        Reuse your existing _read_bounds_from_ui() to get numpy arrays, but
+        expose it for the GUI thread to pass to the worker.
+        """
+        bounds = self._read_bounds_from_ui()
+        if bounds is None:
+            raise ValueError("Invalid/incomplete bounds in Optimization table.")
+        return bounds
