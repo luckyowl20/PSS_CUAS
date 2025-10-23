@@ -244,6 +244,8 @@ class RigApp(QWidget):
             self._opt_field_edits[max_key] = max_edit
 
         self.opt_table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        # turn off scroll bar
+        # self.opt_table.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
 
         def _fit_opt_table_height():
             h = (self.opt_table.horizontalHeader().height()
@@ -256,7 +258,7 @@ class RigApp(QWidget):
         self._opt_layout.addWidget(self.opt_table)
 
         # Keep content top-aligned when short
-        self._opt_layout.addStretch(1)
+        self._opt_layout.addStretch(3)
 
         self._opt_scroll.setWidget(self._opt_content)
         opt_page_layout.addWidget(self._opt_scroll)
